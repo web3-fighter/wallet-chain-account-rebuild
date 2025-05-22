@@ -1,0 +1,6 @@
+github.com/ethereum/go-ethereum v1.14.11/go.mod h1:+l/fr42Mma+xBnhefL/+z11/hcmJ2egl+ScIVPjhc7E=
+github.com/holiman/uint256 v1.3.1/go.mod h1:EOMSn4q6Nyt9P6efbI3bueV4e1b3dGlUCXeiRV4ng7E=
+github.com/web3-fighter/chain-explorer-api v1.0.0 h1:2gmWHzggKXrL3bvEszuTszEVuIpUeoJANf1emlbw0ug=
+github.com/web3-fighter/chain-explorer-api v1.0.0/go.mod h1:798NxgmLhsnsqW5h8Zzlr8E2uIO6yYV7mH38t/M9xOI=
+gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
+gopkg.in/yaml.v2 v2.4.0/go.mod h1:RDklbk79AGWmwhnvt/jBztapEOGDOx6ZbXqjP6csGnQ=
