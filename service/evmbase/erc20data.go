@@ -7,20 +7,20 @@ import (
 	"time"
 )
 
-type EthData struct {
+type EthScan struct {
 	EthDataCli *etherscan.ChainExplorerClient
 }
 
-func NewEthDataClient(baseUrl, apiKey string, timeout time.Duration) (*EthData, error) {
+func NewEthDataClient(baseUrl, apiKey string, timeout time.Duration) (*EthScan, error) {
 	etherscanCli, err := etherscan.NewChainExplorerClient(apiKey, baseUrl, false, timeout)
 	if err != nil {
 		log.Error("New etherscan client fail", "err", err)
 		return nil, err
 	}
-	return &EthData{EthDataCli: etherscanCli}, err
+	return &EthScan{EthDataCli: etherscanCli}, err
 }
 
-func (ed *EthData) GetTxByAddress(page, pagesize uint64, address string, action types.ActionType) (*types.TransactionResponse[types.AccountTxResponse], error) {
+func (ed *EthScan) GetTxByAddress(page, pagesize uint64, address string, action types.ActionType) (*types.TransactionResponse[types.AccountTxResponse], error) {
 	request := &types.AccountTxRequest{
 		PageRequest: types.PageRequest{
 			Page:  page,
@@ -36,7 +36,7 @@ func (ed *EthData) GetTxByAddress(page, pagesize uint64, address string, action 
 	return txData, nil
 }
 
-func (ed *EthData) GetBalanceByAddress(contractAddr, address string) (*types.AccountBalanceResponse, error) {
+func (ed *EthScan) GetBalanceByAddress(contractAddr, address string) (*types.AccountBalanceResponse, error) {
 	accountItem := []string{address}
 	symbol := []string{"ETH"}
 	contractAddress := []string{contractAddr}
