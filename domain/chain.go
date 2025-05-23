@@ -1,5 +1,12 @@
 package domain
 
+type CommonParam struct {
+	ConsumerToken string `protobuf:"bytes,1,opt,name=consumer_token,json=consumerToken,proto3" json:"consumer_token,omitempty"`
+	Chain         string `protobuf:"bytes,2,opt,name=chain,proto3" json:"chain,omitempty"`
+	Coin          string `protobuf:"bytes,3,opt,name=coin,proto3" json:"coin,omitempty"`
+	Network       string `protobuf:"bytes,4,opt,name=network,proto3" json:"network,omitempty"`
+}
+
 type ExtraDataParam struct {
 	ConsumerToken string `protobuf:"bytes,1,opt,name=consumer_token,json=consumerToken,proto3" json:"consumer_token,omitempty"`
 	Chain         string `protobuf:"bytes,2,opt,name=chain,proto3" json:"chain,omitempty"`
@@ -92,9 +99,15 @@ type FeeParam struct {
 }
 
 type Fee struct {
-	SlowFee   string `protobuf:"bytes,3,opt,name=slow_fee,json=slowFee,proto3" json:"slow_fee,omitempty"`
-	NormalFee string `protobuf:"bytes,4,opt,name=normal_fee,json=normalFee,proto3" json:"normal_fee,omitempty"`
-	FastFee   string `protobuf:"bytes,5,opt,name=fast_fee,json=fastFee,proto3" json:"fast_fee,omitempty"`
+	SlowFee   GasFee `protobuf:"bytes,3,opt,name=slow_fee,json=slowFee,proto3" json:"slow_fee,omitempty"`
+	NormalFee GasFee `protobuf:"bytes,4,opt,name=normal_fee,json=normalFee,proto3" json:"normal_fee,omitempty"`
+	FastFee   GasFee `protobuf:"bytes,5,opt,name=fast_fee,json=fastFee,proto3" json:"fast_fee,omitempty"`
+}
+
+type GasFee struct {
+	GasPrice  string
+	GasTipCap string
+	MultiVal  string
 }
 
 type AccountParam struct {
@@ -173,7 +186,7 @@ type BlockNumberParam struct {
 	ViewTx        bool   `protobuf:"varint,4,opt,name=view_tx,json=viewTx,proto3" json:"view_tx,omitempty"`
 }
 
-type BlockResult struct {
+type Block struct {
 	Height       int64               `protobuf:"varint,3,opt,name=height,proto3" json:"height,omitempty"`
 	Hash         string              `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
 	BaseFee      string              `protobuf:"bytes,5,opt,name=base_fee,json=baseFee,proto3" json:"base_fee,omitempty"`
@@ -220,4 +233,45 @@ const (
 	TxStatus_Success               TxStatus = 3
 	TxStatus_ContractExecuteFailed TxStatus = 4
 	TxStatus_Other                 TxStatus = 5
+)
+
+const (
+	ChainIdRedisKey     = "chainId:%s"
+	ChainId             = "chainId"
+	ChainName           = "chainName"
+	Polygon             = "Polygon"
+	GormInfoFmt         = "%s\n[%.3fms] [rows:%v] %s"
+	ZeroAddress         = "0x0000000000000000000000000000000000000000"
+	WEthAddress         = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+	EthAddress          = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+	SepoliaWETH         = ""
+	LogTimeFormat       = "2006-01-02"
+	LayerTypeOne        = 1
+	LayerTypeTwo        = 2
+	StakingTypeStake    = 1
+	StakingTypeReward   = 2
+	StakingTypeWithdraw = 3
+
+	BridgeOperaInitType     = 1
+	BridgeOperaFinalizeType = 2
+
+	ScrollChainId          uint64 = 534352
+	PolygonChainId         uint64 = 1101
+	PolygonSepoliaChainId  uint64 = 1442
+	EthereumChainId        uint64 = 1
+	EthereumSepoliaChainId uint64 = 11155111
+	BaseChainId            uint64 = 8453
+	BaseSepoliaChainId     uint64 = 84532
+	MantaChainId           uint64 = 169
+	MantaSepoliaChainId    uint64 = 3441006
+	MantleSepoliaChainId   uint64 = 5003
+	MantleChainId          uint64 = 5000
+	ZkFairSepoliaChainId   uint64 = 43851
+	ZkFairChainId          uint64 = 42766
+	OkxSepoliaChainId      uint64 = 195
+	OkxChainId             uint64 = 66
+	OpChinId               uint64 = 10
+	OpTestChinId           uint64 = 11155420
+	LineaChainId           uint64 = 59144
+	BlocksLimit                   = 10000
 )

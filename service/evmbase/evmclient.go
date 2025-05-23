@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/web3-fighter/wallet-chain-account/pkg/global_const"
+	"github.com/web3-fighter/wallet-chain-account/domain"
 	"github.com/web3-fighter/wallet-chain-account/pkg/helpers"
 	"github.com/web3-fighter/wallet-chain-account/pkg/retry"
 	"math/big"
@@ -82,8 +82,8 @@ func (c *evmClient) BlockHeadersByRange(ctx context.Context, startHeight, endHei
 	ctxwt, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
 	defer cancel()
 	// ZkFair 相关链
-	if chainId == uint(global_const.ZkFairSepoliaChainId) ||
-		chainId == uint(global_const.ZkFairChainId) {
+	if chainId == uint(domain.ZkFairSepoliaChainId) ||
+		chainId == uint(domain.ZkFairChainId) {
 		groupSize := 100
 		var wg sync.WaitGroup
 		numGroups := (int(count)-1)/groupSize + 1
@@ -322,9 +322,11 @@ func (c *evmClient) EthGetCode(ctx context.Context, address common.Address) (str
 	if err != nil {
 		return "", err
 	}
+	// 如果是普通地址（EOA，Externally Owned Account）：返回空字符串（0x）；
 	if result.String() == "0x" {
 		return "eoa", nil
 	} else {
+		// 如果是合约地址：装成了 "contract" 返回
 		return "contract", nil
 	}
 }
@@ -359,8 +361,8 @@ func (c *evmClient) FilterLogs(ctx context.Context, filterQuery ethereum.FilterQ
 	batchElems[1] = rpc.BatchElem{Method: "eth_getLogs", Args: []interface{}{arg}, Result: &logs}
 	ctxwt, cancel := context.WithTimeout(ctx, defaultRequestTimeout*10)
 	defer cancel()
-	if chainId == uint(global_const.ZkFairSepoliaChainId) ||
-		chainId == uint(global_const.ZkFairChainId) {
+	if chainId == uint(domain.ZkFairSepoliaChainId) ||
+		chainId == uint(domain.ZkFairChainId) {
 
 		batchElems[0].Error = c.evmRpc.CallContext(ctxwt, &header, batchElems[0].Method, toBlockNumArg(filterQuery.ToBlock), false)
 		batchElems[1].Error = c.evmRpc.CallContext(ctxwt, &logs, batchElems[1].Method, arg)
