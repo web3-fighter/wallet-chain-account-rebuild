@@ -20,7 +20,7 @@ type WalletAccountService interface {
 	// ----------------
 	GetTxByHash(ctx context.Context, param domain.GetTxByHashParam) (domain.TxMessage, error)
 	CreateUnSignTransaction(ctx context.Context, param domain.UnSignTransactionParam) (string, error)
-	BuildSignedTransaction(ctx context.Context, param domain.SignedTransactionParam) (string, error)
+	BuildSignedTransaction(ctx context.Context, param domain.SignedTransactionParam) (domain.SignedTransaction, error)
 	DecodeTransaction(ctx context.Context, param domain.DecodeTransactionParam) (string, error)
 	VerifySignedTransaction(ctx context.Context, param domain.VerifyTransactionParam) (bool, error)
 	GetExtraData(ctx context.Context, param domain.ExtraDataParam) (string, error)

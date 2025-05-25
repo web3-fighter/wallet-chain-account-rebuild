@@ -62,8 +62,8 @@ func (s *DoNotingService) CreateUnSignTransaction(ctx context.Context, param dom
 	return "", nil
 }
 
-func (s *DoNotingService) BuildSignedTransaction(ctx context.Context, param domain.SignedTransactionParam) (string, error) {
-	return "", nil
+func (s *DoNotingService) BuildSignedTransaction(ctx context.Context, param domain.SignedTransactionParam) (domain.SignedTransaction, error) {
+	return domain.SignedTransaction{}, nil
 }
 
 func (s *DoNotingService) DecodeTransaction(ctx context.Context, param domain.DecodeTransactionParam) (string, error) {

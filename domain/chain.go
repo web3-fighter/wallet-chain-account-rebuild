@@ -21,6 +21,7 @@ type VerifyTransactionParam struct {
 	Network       string `protobuf:"bytes,3,opt,name=network,proto3" json:"network,omitempty"`
 	PublicKey     string `protobuf:"bytes,4,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
 	Signature     string `protobuf:"bytes,5,opt,name=signature,proto3" json:"signature,omitempty"`
+	RawTx         string `protobuf:"bytes,4,opt,name=raw_tx,json=rawTx,proto3" json:"raw_tx,omitempty"`
 }
 
 type DecodeTransactionParam struct {
@@ -37,6 +38,11 @@ type SignedTransactionParam struct {
 	Base64Tx      string `protobuf:"bytes,4,opt,name=base64_tx,json=base64Tx,proto3" json:"base64_tx,omitempty"`
 	Signature     string `protobuf:"bytes,5,opt,name=signature,proto3" json:"signature,omitempty"`
 	PublicKey     string `protobuf:"bytes,6,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+}
+
+type SignedTransaction struct {
+	TxHash   string `json:"tx_hash,omitempty"`
+	SignedTx string `json:"signed_tx,omitempty"`
 }
 
 type UnSignTransactionParam struct {

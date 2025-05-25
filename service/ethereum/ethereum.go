@@ -2,18 +2,23 @@ package ethereum
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethereumtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/shopspring/decimal"
 	"github.com/status-im/keycard-go/hexutils"
 	"github.com/web3-fighter/chain-explorer-api/types"
 	"github.com/web3-fighter/wallet-chain-account/domain"
+	"github.com/web3-fighter/wallet-chain-account/pkg/util"
 	"github.com/web3-fighter/wallet-chain-account/service"
 	"github.com/web3-fighter/wallet-chain-account/service/donoting"
 	"github.com/web3-fighter/wallet-chain-account/service/evmbase"
@@ -428,29 +433,262 @@ func (s *EthNodeService) GetTxByHash(ctx context.Context, param domain.GetTxByHa
 	}, nil
 }
 
-func (s *EthNodeService) CreateUnSignTransaction(ctx context.Context, param domain.UnSignTransactionParam) (string, error) {
-	//TODO implement me
-	panic("implement me")
+// CreateUnSignTransaction 创建 EIP-1559 类型未签名交易（UnSigned Transaction）
+/*
+	大多数交易已经是 EIP-1559 类型（Type 0x02），比例通常超过 90%。
+	因为主流钱包（如 MetaMask、Rainbow、Safe 等）都默认使用 EIP-1559。
+	所以先只支持 EIP-1559 类型交易
+*/
+func (s *EthNodeService) CreateUnSignTransaction(_ context.Context, param domain.UnSignTransactionParam) (string, error) {
+	dFeeTx, _, err := s.buildDynamicFeeTx(param.Base64Tx)
+	if err != nil {
+		return "", fmt.Errorf("buildDynamicFeeTx failed: %w", err)
+	}
+
+	log.Info("ethereum CreateUnSignTransaction", "dFeeTx", util.ToJSONString(dFeeTx))
+
+	// Create unsigned transaction
+	rawTx, err := evmbase.CreateEip1559UnSignTx(dFeeTx, dFeeTx.ChainID)
+	if err != nil {
+		log.Error("create un sign tx fail", "err", err)
+		return "", fmt.Errorf("create un sign tx fail: %w", err)
+	}
+
+	log.Info("ethereum CreateUnSignTransaction", "rawTx", rawTx)
+	return rawTx, nil
 }
 
-func (s *EthNodeService) BuildSignedTransaction(ctx context.Context, param domain.SignedTransactionParam) (string, error) {
-	//TODO implement me
-	panic("implement me")
+// BuildSignedTransaction 构造一个 已签名交易（EIP-1559 类型），
+func (s *EthNodeService) BuildSignedTransaction(_ context.Context, param domain.SignedTransactionParam) (domain.SignedTransaction, error) {
+	var result domain.SignedTransaction
+
+	// 调用动态费用交易方法，返回：一个是实际参与交易构造的结构体，另一个是原始 JSON 用于日志或比对
+	dFeeTx, dynamicFeeTx, err := s.buildDynamicFeeTx(param.Base64Tx)
+	if err != nil {
+		log.Error("buildDynamicFeeTx failed", "err", err)
+		return result, fmt.Errorf("buildDynamicFeeTx failed: %w", err)
+	}
+
+	log.Info("ethereum BuildSignedTransaction", "dFeeTx", util.ToJSONString(dFeeTx))
+	log.Info("ethereum BuildSignedTransaction", "dynamicFeeTx", util.ToJSONString(dynamicFeeTx))
+	log.Info("ethereum BuildSignedTransaction", "req.Signature", param.Signature)
+
+	// Decode signature and create signed transaction
+	inputSignatureByte, err := hex.DecodeString(param.Signature)
+	if err != nil {
+		log.Error("decode signature failed", "err", err)
+		return result, fmt.Errorf("invalid signature: %w", err)
+	}
+
+	// 构造已签名交易（RLP 编码）
+	signer, signedTx, rawTx, txHash, err := evmbase.CreateEip1559SignedTx(dFeeTx, inputSignatureByte, dFeeTx.ChainID)
+	if err != nil {
+		log.Error("create signed tx fail", "err", err)
+		return result, fmt.Errorf("create signed tx fail: %w", err)
+	}
+
+	log.Info("ethereum BuildSignedTransaction", "rawTx", rawTx)
+
+	// Verify sender，校验签名是否由发起者地址签出
+	/*
+		从签名交易中 还原出发送者地址；
+		是验证签名来源的标准方法（公钥恢复）；
+		若地址不匹配，返回错误。
+	*/
+	sender, err := ethereumtypes.Sender(signer, signedTx)
+	if err != nil {
+		log.Error("recover sender failed", "err", err)
+		return result, fmt.Errorf("recover sender failed: %w", err)
+	}
+
+	// 说明签名和from地址不一致，可能是签名错误或数据被篡改
+	if sender.Hex() != dynamicFeeTx.FromAddress {
+		log.Error("sender mismatch",
+			"expected", dynamicFeeTx.FromAddress,
+			"got", sender.Hex())
+		return result, fmt.Errorf("sender address mismatch: expected %s, got %s", dynamicFeeTx.FromAddress, sender.Hex())
+	}
+
+	log.Info("ethereum BuildSignedTransaction", "sender", sender.Hex())
+
+	// TxHash：交易哈希；
+	// SignedTx：带签名的交易原文（RLP 编码）；
+	result.TxHash = txHash
+	result.SignedTx = rawTx
+	return result, nil
 }
 
-func (s *EthNodeService) DecodeTransaction(ctx context.Context, param domain.DecodeTransactionParam) (string, error) {
-	//TODO implement me
-	panic("implement me")
+func (s *EthNodeService) DecodeTransaction(_ context.Context, param domain.DecodeTransactionParam) (string, error) {
+	// 解码 hex 编码的原始交易数据（raw_tx）
+	rawTxBytes, err := hex.DecodeString(strings.TrimPrefix(param.RawTx, "0x"))
+	if err != nil {
+		return "", fmt.Errorf("decode raw tx hex failed: %w", err)
+	}
+
+	// 尝试 RLP 解码为 types.Transaction
+	var tx ethereumtypes.Transaction
+	if err := rlp.DecodeBytes(rawTxBytes, &tx); err != nil {
+		return "", fmt.Errorf("rlp decode transaction failed: %w", err)
+	}
+	// 解析签名器（使用交易的 chainId）
+	signer := ethereumtypes.LatestSignerForChainID(tx.ChainId())
+
+	// 获取交易发送方地址
+	from, err := ethereumtypes.Sender(signer, &tx)
+	if err != nil {
+		return "", fmt.Errorf("failed to recover sender: %w", err)
+	}
+
+	// 构建基础信息
+	txInfo := Eip1559TransactionInfo{
+		Hash:                 tx.Hash().Hex(),
+		FromAddress:          from.Hex(),
+		ToAddress:            "",
+		Value:                tx.Value().String(),
+		GasLimit:             tx.Gas(),
+		MaxFeePerGas:         tx.GasFeeCap().String(),
+		MaxPriorityFeePerGas: tx.GasTipCap().String(),
+		Nonce:                tx.Nonce(),
+		Data:                 fmt.Sprintf("0x%x", tx.Data()),
+		Type:                 tx.Type(),
+		ChainId:              tx.ChainId().String(),
+		Amount:               tx.Value().String(),
+	}
+
+	if tx.To() != nil {
+		txInfo.ToAddress = tx.To().Hex()
+	}
+
+	// ERC20 transfer(address,uint256) = 0xa9059cbb
+	inputData := hexutil.Encode(tx.Data()[:])
+	if len(inputData) >= 138 && inputData[:10] == "0xa9059cbb" {
+		txInfo.ToAddress = "0x" + inputData[34:74]
+		trimHex := strings.TrimLeft(inputData[74:138], "0")
+		rawValue, _ := hexutil.DecodeBig("0x" + trimHex)
+		txInfo.ContractAddress = tx.To().String()
+		dataAmount := decimal.NewFromBigInt(rawValue, 0).BigInt()
+		txInfo.Amount = dataAmount.String()
+	}
+
+	// JSON 序列化
+	jsonBytes, err := json.Marshal(txInfo)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal tx info: %w", err)
+	}
+
+	// Base64 编码
+	base64Tx := base64.StdEncoding.EncodeToString(jsonBytes)
+	return base64Tx, nil
 }
 
-func (s *EthNodeService) VerifySignedTransaction(ctx context.Context, param domain.VerifyTransactionParam) (bool, error) {
-	//TODO implement me
-	panic("implement me")
-}
+//// VerifySignedTransaction 验证已签名的交易
+//func (s *EthNodeService) VerifySignedTransaction(_ context.Context, param domain.VerifyTransactionParam) (bool, error) {
+//	//TODO implement me
+//	panic("implement me")
+//}
 
 func (s *EthNodeService) GetExtraData(ctx context.Context, param domain.ExtraDataParam) (string, error) {
 	//TODO implement me
 	panic("implement me")
+}
+
+// buildDynamicFeeTx 构建动态费用交易的公共方法
+func (s *EthNodeService) buildDynamicFeeTx(base64Tx string) (*ethereumtypes.DynamicFeeTx, *Eip1559DynamicFeeTx, error) {
+	// 1. Decode base64 string
+	// 把交易请求先 base64 编码后传过来，这里先进行解码成 JSON 字节
+	txReqJsonByte, err := base64.StdEncoding.DecodeString(base64Tx)
+	if err != nil {
+		log.Error("decode string fail", "err", err)
+		return nil, nil, err
+	}
+	// 2. Unmarshal JSON to struct
+	// 反序列化 JSON 为结构体 Eip1559DynamicFeeTx
+	var dynamicFeeTx Eip1559DynamicFeeTx
+	if err := json.Unmarshal(txReqJsonByte, &dynamicFeeTx); err != nil {
+		log.Error("parse json fail", "err", err)
+		return nil, nil, err
+	}
+
+	// 3. Convert string values to big.Int
+	// 将字符串类型的 ChainID、Gas 价格、金额转为 *big.Int，因为以太坊交易结构体中的这些字段是大整数（单位为 wei）
+	chainID := new(big.Int)
+	maxPriorityFeePerGas := new(big.Int)
+	maxFeePerGas := new(big.Int)
+	amount := new(big.Int)
+
+	if _, ok := chainID.SetString(dynamicFeeTx.ChainId, 10); !ok {
+		return nil, nil, fmt.Errorf("invalid chain ID: %s", dynamicFeeTx.ChainId)
+	}
+
+	// MaxPriorityFeePerGas（小费）	你愿意额外付给矿工的小费（tip）	激励矿工打包你的交易	矿工（打包者）
+	if _, ok := maxPriorityFeePerGas.SetString(dynamicFeeTx.MaxPriorityFeePerGas, 10); !ok {
+		return nil, nil, fmt.Errorf("invalid max priority fee: %s", dynamicFeeTx.MaxPriorityFeePerGas)
+	}
+
+	// MaxFeePerGas（你能承受的最高费用）	你愿意支付的最多的总费用（含 baseFee 和小费）	限制你最多愿意为 gas 花多少钱	baseFee + 小费（MaxPriorityFeePerGas）总和
+	if _, ok := maxFeePerGas.SetString(dynamicFeeTx.MaxFeePerGas, 10); !ok {
+		return nil, nil, fmt.Errorf("invalid max fee: %s", dynamicFeeTx.MaxFeePerGas)
+	}
+	if _, ok := amount.SetString(dynamicFeeTx.Amount, 10); !ok {
+		return nil, nil, fmt.Errorf("invalid amount: %s", dynamicFeeTx.Amount)
+	}
+
+	// 4. Handle addresses and data
+	toAddress := common.HexToAddress(dynamicFeeTx.ToAddress)
+	var finalToAddress common.Address
+	var finalAmount *big.Int
+	var buildData []byte
+	// 判断是否是 ETH 转账
+	isEthTrans := isEthTransfer(&dynamicFeeTx)
+	log.Info("contract address check", "contractAddress", dynamicFeeTx.ContractAddress, "isEthTransfer", isEthTrans)
+
+	// 5. Handle contract interaction vs direct transfer
+	if isEthTrans {
+		/*
+			如果是 ETH 转账
+			To 是目标地址
+			Value 是金额
+			Data 为空
+		*/
+		finalToAddress = toAddress
+		finalAmount = amount
+	} else {
+		/*
+			如果是 ERC20 代币转账
+			实际发送的目标地址是代币合约地址；
+			Data 是调用 ERC20 的 transfer(to, amount) 生成的 ABI 编码；
+			Value = 0，因为你不是转 ETH，只是合约调用。
+		*/
+		contractAddress := common.HexToAddress(dynamicFeeTx.ContractAddress)
+		buildData = evmbase.BuildErc20Data(toAddress, amount)
+		finalToAddress = contractAddress
+		finalAmount = big.NewInt(0)
+	}
+
+	// 6. Create dynamic fee transaction
+	dFeeTx := &ethereumtypes.DynamicFeeTx{
+		ChainID:   chainID,
+		Nonce:     dynamicFeeTx.Nonce,
+		GasTipCap: maxPriorityFeePerGas,
+		GasFeeCap: maxFeePerGas,
+		Gas:       dynamicFeeTx.GasLimit,
+		To:        &finalToAddress,
+		Value:     finalAmount,
+		Data:      buildData,
+	}
+
+	return dFeeTx, &dynamicFeeTx, nil
+}
+
+// 判断是否为 ETH 转账
+func isEthTransfer(tx *Eip1559DynamicFeeTx) bool {
+	// 检查合约地址是否为空或零地址
+	if tx.ContractAddress == "" ||
+		tx.ContractAddress == "0x0000000000000000000000000000000000000000" ||
+		tx.ContractAddress == "0x00" {
+		return true
+	}
+	return false
 }
 
 func NewEthNodeService(ethClient evmbase.EVMClient, ethDataClient *evmbase.EthScan) service.WalletAccountService {
