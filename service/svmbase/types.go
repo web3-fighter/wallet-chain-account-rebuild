@@ -11,7 +11,7 @@ type SVMClient interface {
 
 	GetAccountInfo(ctx context.Context, inputAddr string) (*AccountInfo, error)
 	GetBalance(ctx context.Context, inputAddr string) (uint64, error)
-	GetLatestBlockhash(ctx context.Context, commitmentType CommitmentType) (string, error)
+	GetLatestBlockHash(ctx context.Context, commitmentType CommitmentType) (string, error)
 	SendTransaction(ctx context.Context, signedTx string, config *SendTransactionRequest) (string, error)
 	SimulateTransaction(ctx context.Context, signedTx string, config *SimulateRequest) (*SimulateResult, error)
 
@@ -34,9 +34,140 @@ type SVMClient interface {
 	) ([]*SignatureInfo, error)
 }
 
+type GetSignaturesRequest struct {
+	Commitment     string `json:"commitment,omitempty"`
+	MinContextSlot uint64 `json:"minContextSlot,omitempty"`
+	Limit          uint64 `json:"limit,omitempty"`
+	Before         string `json:"before,omitempty"`
+	Until          string `json:"until,omitempty"`
+}
+
+type GetSignaturesResponse struct {
+	Jsonrpc string           `json:"jsonrpc"`
+	ID      int              `json:"id"`
+	Error   *RPCError        `json:"error,omitempty"`
+	Result  []*SignatureInfo `json:"result"`
+}
+
+type GetBlockResponse struct {
+	JsonRPC string      `json:"jsonrpc"`
+	ID      int         `json:"id"`
+	Error   *RPCError   `json:"error,omitempty"`
+	Result  BlockResult `json:"result"`
+}
+
+type GetBlockRequest struct {
+	// slot status
+	// Finalized Confirmed Processed
+	Commitment CommitmentType `json:"commitment,omitempty"`
+	// "json", "jsonParsed", "base58", "base64"
+	Encoding string `json:"encoding"`
+	// max version
+	// Legacy = 0, no other version
+	MaxSupportedTransactionVersion int `json:"maxSupportedTransactionVersion"`
+	// "full", "accounts", "signatures", "none"
+	TransactionDetails string `json:"transactionDetails"`
+	// contain rewards
+	Rewards bool `json:"rewards"`
+}
+
+type GetTransactionResponse struct {
+	Jsonrpc string            `json:"jsonrpc"`
+	ID      int               `json:"id"`
+	Error   *RPCError         `json:"error,omitempty"`
+	Result  TransactionResult `json:"result"`
+}
+
+// GetBlocksWithLimitResponse represents the response structure
+type GetBlocksWithLimitResponse struct {
+	JsonRPC string    `json:"jsonrpc"`
+	ID      int       `json:"id"`
+	Error   *RPCError `json:"error,omitempty"`
+	Result  []uint64  `json:"result"`
+}
+
+type GetSlotRequest struct {
+	Commitment     CommitmentType `json:"commitment,omitempty"`
+	MinContextSlot uint64         `json:"minContextSlot,omitempty"`
+}
+
+type GetSlotResponse struct {
+	JsonRPC string    `json:"jsonrpc"`
+	ID      int       `json:"id"`
+	Error   *RPCError `json:"error,omitempty"`
+	// slot
+	Result uint64 `json:"result"`
+}
+
+type getRecentPrioritizationFeesResponse struct {
+	Jsonrpc string               `json:"jsonrpc"`
+	ID      int                  `json:"id"`
+	Error   *RPCError            `json:"error,omitempty"`
+	Result  []*PrioritizationFee `json:"result"`
+}
+
+type GetFeeForMessageRequest struct {
+	Commitment     string `json:"commitment,omitempty"`
+	MinContextSlot uint64 `json:"minContextSlot,omitempty"`
+}
+
+type GetFeeForMessageResponse struct {
+	Jsonrpc string    `json:"jsonrpc"`
+	ID      int       `json:"id"`
+	Error   *RPCError `json:"error,omitempty"`
+	Result  struct {
+		Context struct {
+			Slot uint64 `json:"slot"`
+		} `json:"context"`
+		Value *uint64 `json:"value"`
+	} `json:"result"`
+}
+
+type SimulateTransactionResponse struct {
+	Jsonrpc string         `json:"jsonrpc"`
+	ID      int            `json:"id"`
+	Error   *RPCError      `json:"error,omitempty"`
+	Result  SimulateResult `json:"result"`
+}
+
+type SendTransactionResponse struct {
+	Jsonrpc string    `json:"jsonrpc"`
+	ID      int       `json:"id"`
+	Result  string    `json:"result"`
+	Error   *RPCError `json:"error,omitempty"`
+}
+
+type GetLatestBlockHashResponse struct {
+	JsonRPC string    `json:"jsonrpc"`
+	ID      int       `json:"id"`
+	Error   *RPCError `json:"error,omitempty"`
+	Result  struct {
+		Context struct {
+			Slot uint64 `json:"slot"`
+		} `json:"context"`
+		Value struct {
+			BlockHash            string `json:"blockhash"`
+			LastValidBlockHeight uint64 `json:"lastValidBlockHeight"`
+		} `json:"value"`
+	} `json:"result"`
+}
+
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+type GetAccountInfoResponse struct {
+	JsonRPC string    `json:"jsonrpc"`
+	ID      int       `json:"id"`
+	Error   *RPCError `json:"error,omitempty"`
+	Result  struct {
+		Context struct {
+			// now slot
+			Slot uint64 `json:"slot"`
+		} `json:"context"`
+		Value AccountInfo `json:"value"`
+	} `json:"result"`
 }
 
 type GetHealthResponse struct {
@@ -185,6 +316,18 @@ type SimulateRequest struct {
 	MinContextSlot         uint64        `json:"minContextSlot,omitempty"`
 	Encoding               string        `json:"encoding,omitempty"`
 	Accounts               *AccountsInfo `json:"accounts,omitempty"`
+}
+
+type GetBalanceResponse struct {
+	JsonRPC string    `json:"jsonrpc"`
+	ID      int       `json:"id"`
+	Error   *RPCError `json:"error,omitempty"`
+	Result  struct {
+		Context struct {
+			Slot uint64 `json:"slot"`
+		} `json:"context"`
+		Value uint64 `json:"value"`
+	} `json:"result"`
 }
 
 type AccountsInfo struct {
