@@ -33,16 +33,16 @@ const (
 	ContractTransfer = "contract"
 )
 
-var _ service.WalletAccountService = (*EthNodeService)(nil)
+var _ service.WalletAccountService = (*ETHNodeService)(nil)
 
-type EthNodeService struct {
+type ETHNodeService struct {
 	ethClient     evmbase.EVMClient
 	ethDataClient *evmbase.EthScan
 	donoting.DoNotingService
 }
 
 // ConvertAddress 将传入的十六进制字符串形式的 公钥 转换为 以太坊地址。
-func (s *EthNodeService) ConvertAddress(_ context.Context, param domain.ConvertAddressParam) (string, error) {
+func (s *ETHNodeService) ConvertAddress(_ context.Context, param domain.ConvertAddressParam) (string, error) {
 	// param.PublicKey：是未经压缩的公钥（通常是 130 个字符，0x04 开头）。
 	// hex.DecodeString(...)：将公钥字符串转为字节切片。
 	// 如果解码失败，就返回一个空地址 0x0000000000000000000000000000000000000000。
@@ -68,7 +68,7 @@ func (s *EthNodeService) ConvertAddress(_ context.Context, param domain.ConvertA
 	return addressCommon.String(), nil
 }
 
-func (s *EthNodeService) ValidAddress(_ context.Context, param domain.ValidAddressParam) (bool, error) {
+func (s *ETHNodeService) ValidAddress(_ context.Context, param domain.ValidAddressParam) (bool, error) {
 	//以太坊地址 = 0x + 40位十六进制字符 → 长度必须是 42。
 	//必须以 "0x" 开头，否则格式不合法。
 	if len(param.Address) != 42 || !strings.HasPrefix(param.Address, "0x") {
@@ -79,7 +79,7 @@ func (s *EthNodeService) ValidAddress(_ context.Context, param domain.ValidAddre
 	return isValid, nil
 }
 
-func (s *EthNodeService) GetBlockByNumber(ctx context.Context, param domain.BlockNumberParam) (domain.Block, error) {
+func (s *ETHNodeService) GetBlockByNumber(ctx context.Context, param domain.BlockNumberParam) (domain.Block, error) {
 	block, err := s.ethClient.BlockByNumber(ctx, big.NewInt(param.Height))
 	if err != nil {
 		log.Error("block by number error", err)
@@ -107,7 +107,7 @@ func (s *EthNodeService) GetBlockByNumber(ctx context.Context, param domain.Bloc
 	}, nil
 }
 
-func (s *EthNodeService) GetBlockByHash(ctx context.Context, param domain.BlockHashParam) (domain.Block, error) {
+func (s *ETHNodeService) GetBlockByHash(ctx context.Context, param domain.BlockHashParam) (domain.Block, error) {
 	block, err := s.ethClient.BlockByHash(ctx, common.HexToHash(param.Hash))
 	if err != nil {
 		log.Error("block by hash error", err)
@@ -135,7 +135,7 @@ func (s *EthNodeService) GetBlockByHash(ctx context.Context, param domain.BlockH
 	}, nil
 }
 
-func (s *EthNodeService) GetBlockHeaderByHash(ctx context.Context, param domain.BlockHeaderHashParam) (domain.BlockHeader, error) {
+func (s *ETHNodeService) GetBlockHeaderByHash(ctx context.Context, param domain.BlockHeaderHashParam) (domain.BlockHeader, error) {
 	blockInfo, err := s.ethClient.BlockHeaderByHash(ctx, common.HexToHash(param.Hash))
 	if err != nil {
 		log.Error("get latest block header fail", "err", err)
@@ -166,7 +166,7 @@ func (s *EthNodeService) GetBlockHeaderByHash(ctx context.Context, param domain.
 	return blockHeader, nil
 }
 
-func (s *EthNodeService) ListBlockHeaderByRange(ctx context.Context, param domain.BlockHeaderByRangeParam) ([]domain.BlockHeader, error) {
+func (s *ETHNodeService) ListBlockHeaderByRange(ctx context.Context, param domain.BlockHeaderByRangeParam) ([]domain.BlockHeader, error) {
 	startBlock := new(big.Int)
 	endBlock := new(big.Int)
 	startBlock.SetString(param.Start, 10)
@@ -204,7 +204,7 @@ func (s *EthNodeService) ListBlockHeaderByRange(ctx context.Context, param domai
 	return blockHeaderList, nil
 }
 
-func (s *EthNodeService) GetAccount(ctx context.Context, param domain.AccountParam) (domain.Account, error) {
+func (s *ETHNodeService) GetAccount(ctx context.Context, param domain.AccountParam) (domain.Account, error) {
 	nonceResult, err := s.ethClient.TxCountByAddress(ctx, common.HexToAddress(param.Address))
 	if err != nil {
 		log.Error("get nonce by address fail", "err", err)
@@ -226,7 +226,7 @@ func (s *EthNodeService) GetAccount(ctx context.Context, param domain.AccountPar
 	}, nil
 }
 
-func (s *EthNodeService) GetFee(ctx context.Context, _ domain.FeeParam) (domain.Fee, error) {
+func (s *ETHNodeService) GetFee(ctx context.Context, _ domain.FeeParam) (domain.Fee, error) {
 	// 网络推荐的 gasPrice（适用于非 EIP-1559 的旧交易，单位为 wei）
 	gasPrice, err := s.ethClient.SuggestGasPrice(ctx)
 	if err != nil {
@@ -266,7 +266,7 @@ func (s *EthNodeService) GetFee(ctx context.Context, _ domain.FeeParam) (domain.
 	}, nil
 }
 
-func (s *EthNodeService) SendTx(ctx context.Context, param domain.SendTxParam) (string, error) {
+func (s *ETHNodeService) SendTx(ctx context.Context, param domain.SendTxParam) (string, error) {
 	transaction, err := s.ethClient.SendRawTransaction(ctx, param.RawTx)
 	if err != nil {
 		return "", fmt.Errorf("send transaction error: %w", err)
@@ -274,7 +274,7 @@ func (s *EthNodeService) SendTx(ctx context.Context, param domain.SendTxParam) (
 	return transaction.String(), nil
 }
 
-func (s *EthNodeService) ListTxByAddress(_ context.Context, param domain.TxAddressParam) ([]domain.TxMessage, error) {
+func (s *ETHNodeService) ListTxByAddress(_ context.Context, param domain.TxAddressParam) ([]domain.TxMessage, error) {
 	var resp *types.TransactionResponse[types.AccountTxResponse]
 	var err error
 	if param.ContractAddress != "0x00" && param.ContractAddress != "" {
@@ -310,7 +310,7 @@ func (s *EthNodeService) ListTxByAddress(_ context.Context, param domain.TxAddre
 }
 
 // GetTxByHash 识别并解析 ERC20 标准的转账交易，提取出实际收款地址和金额，为后续统一交易结构封装打好基础
-func (s *EthNodeService) GetTxByHash(ctx context.Context, param domain.GetTxByHashParam) (domain.TxMessage, error) {
+func (s *ETHNodeService) GetTxByHash(ctx context.Context, param domain.GetTxByHashParam) (domain.TxMessage, error) {
 	tx, err := s.ethClient.TxByHash(ctx, common.HexToHash(param.Hash))
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
@@ -439,7 +439,7 @@ func (s *EthNodeService) GetTxByHash(ctx context.Context, param domain.GetTxByHa
 	因为主流钱包（如 MetaMask、Rainbow、Safe 等）都默认使用 EIP-1559。
 	所以先只支持 EIP-1559 类型交易
 */
-func (s *EthNodeService) CreateUnSignTransaction(_ context.Context, param domain.UnSignTransactionParam) (string, error) {
+func (s *ETHNodeService) CreateUnSignTransaction(_ context.Context, param domain.UnSignTransactionParam) (string, error) {
 	dFeeTx, _, err := s.buildDynamicFeeTx(param.Base64Tx)
 	if err != nil {
 		return "", fmt.Errorf("buildDynamicFeeTx failed: %w", err)
@@ -459,7 +459,7 @@ func (s *EthNodeService) CreateUnSignTransaction(_ context.Context, param domain
 }
 
 // BuildSignedTransaction 构造一个 已签名交易（EIP-1559 类型），
-func (s *EthNodeService) BuildSignedTransaction(_ context.Context, param domain.SignedTransactionParam) (domain.SignedTransaction, error) {
+func (s *ETHNodeService) BuildSignedTransaction(_ context.Context, param domain.SignedTransactionParam) (domain.SignedTransaction, error) {
 	var result domain.SignedTransaction
 
 	// 调用动态费用交易方法，返回：一个是实际参与交易构造的结构体，另一个是原始 JSON 用于日志或比对
@@ -518,7 +518,7 @@ func (s *EthNodeService) BuildSignedTransaction(_ context.Context, param domain.
 	return result, nil
 }
 
-func (s *EthNodeService) DecodeTransaction(_ context.Context, param domain.DecodeTransactionParam) (string, error) {
+func (s *ETHNodeService) DecodeTransaction(_ context.Context, param domain.DecodeTransactionParam) (string, error) {
 	// 解码 hex 编码的原始交易数据（raw_tx）
 	rawTxBytes, err := hex.DecodeString(strings.TrimPrefix(param.RawTx, "0x"))
 	if err != nil {
@@ -582,18 +582,18 @@ func (s *EthNodeService) DecodeTransaction(_ context.Context, param domain.Decod
 }
 
 //// VerifySignedTransaction 验证已签名的交易
-//func (s *EthNodeService) VerifySignedTransaction(_ context.Context, param domain.VerifyTransactionParam) (bool, error) {
+//func (s *ETHNodeService) VerifySignedTransaction(_ context.Context, param domain.VerifyTransactionParam) (bool, error) {
 //	//TODO implement me
 //	panic("implement me")
 //}
 
-func (s *EthNodeService) GetExtraData(ctx context.Context, param domain.ExtraDataParam) (string, error) {
+func (s *ETHNodeService) GetExtraData(ctx context.Context, param domain.ExtraDataParam) (string, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
 // buildDynamicFeeTx 构建动态费用交易的公共方法
-func (s *EthNodeService) buildDynamicFeeTx(base64Tx string) (*ethereumtypes.DynamicFeeTx, *Eip1559DynamicFeeTx, error) {
+func (s *ETHNodeService) buildDynamicFeeTx(base64Tx string) (*ethereumtypes.DynamicFeeTx, *Eip1559DynamicFeeTx, error) {
 	// 1. Decode base64 string
 	// 把交易请求先 base64 编码后传过来，这里先进行解码成 JSON 字节
 	txReqJsonByte, err := base64.StdEncoding.DecodeString(base64Tx)
@@ -691,8 +691,8 @@ func isEthTransfer(tx *Eip1559DynamicFeeTx) bool {
 	return false
 }
 
-func NewEthNodeService(ethClient evmbase.EVMClient, ethDataClient *evmbase.EthScan) service.WalletAccountService {
-	return &EthNodeService{
+func NewETHNodeService(ethClient evmbase.EVMClient, ethDataClient *evmbase.EthScan) service.WalletAccountService {
+	return &ETHNodeService{
 		ethClient:     ethClient,
 		ethDataClient: ethDataClient,
 	}

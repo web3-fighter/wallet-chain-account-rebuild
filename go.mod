@@ -3,7 +3,9 @@ module github.com/web3-fighter/wallet-chain-account
 go 1.22.8
 
 require (
+	github.com/cosmos/btcutil v1.0.5
 	github.com/ethereum/go-ethereum v1.14.11
+	github.com/gagliardetto/solana-go v1.12.0
 	github.com/go-resty/resty/v2 v2.16.5
 	github.com/shopspring/decimal v1.4.0
 	github.com/status-im/keycard-go v0.2.0
@@ -29,9 +31,9 @@ require (
 	github.com/ethereum/go-verkle v0.1.1-0.20240829091221-dffa7562dbe9 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/gagliardetto/binary v0.8.0 // indirect
-	github.com/gagliardetto/solana-go v1.12.0 // indirect
 	github.com/gagliardetto/treeout v0.1.4 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/holiman/uint256 v1.3.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
