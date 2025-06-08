@@ -7,7 +7,7 @@ require (
 	github.com/go-resty/resty/v2 v2.16.5
 	github.com/shopspring/decimal v1.4.0
 	github.com/status-im/keycard-go v0.2.0
-	github.com/web3-fighter/chain-explorer-api v1.0.0
+	github.com/web3-fighter/chain-explorer-api v1.1.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 

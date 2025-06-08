@@ -199,7 +199,21 @@ func (c *svmClient) GetLatestBlockHash(ctx context.Context, commitmentType Commi
 	return blockHash, nil
 }
 
-// SendTransaction TODO
+// SendTransaction
+/*
+功能：向 Solana 主网广播交易
+入参
+	signedTx string：Base58 编码的已签名交易
+	config *SendTransactionRequest：发送配置，如是否跳过前检查等
+
+行为
+	构造 sendTransaction 的 JSON-RPC 请求
+	将交易发送给 RPC 节点进行广播
+
+返回
+	成功返回交易哈希（txid）
+	失败返回网络错误、RPC 错误、或交易签名为空错误
+*/
 func (c *svmClient) SendTransaction(ctx context.Context, signedTx string, config *SendTransactionRequest) (string, error) {
 	if signedTx == "" {
 		return "", fmt.Errorf("invalid input: empty transaction")
@@ -248,12 +262,53 @@ func (c *svmClient) SendTransaction(ctx context.Context, signedTx string, config
 	return resp.Result, nil
 }
 
-// SimulateTransaction TODO
+// SimulateTransaction
+/*
+功能：模拟交易执行，不上链，用于预估结果
+	入参
+		signedTx string：Base64 编码的已签名交易（注意：和上面不同）
+		config *SimulateRequest：模拟配置，如 commitment、是否返回日志等
+
+	行为
+		构造 simulateTransaction 的 JSON-RPC 请求
+		提交模拟执行，不会广播到链上
+	返回
+		成功返回模拟执行结果，包括 logs、units_consumed、错误信息
+		失败返回模拟失败原因或 RPC 错误
+
+	使用建议
+		在发送高价值交易前，建议先调用 SimulateTransaction，确保不会失败或报错。
+		模拟成功后再调用 SendTransaction 广播，避免实际失败浪费 gas。
+*/
+/*
+两者区别对比
+对比项	SendTransaction	SimulateTransaction
+	功能	广播真实交易	模拟交易执行
+	编码要求	base58 编码	base64 编码
+	是否上链	✅ 是	❌ 否
+	是否花费费用	✅ 是（可能消耗 lamports）	❌ 否
+		在 Solana 区块链中，lamports 是 SOL 的最小单位，类似于以太坊的 wei、比特币的 satoshi。
+		✅ 一、基本概念
+			单位	数量	说明
+			1 SOL	= 1,000,000,000 lamports	1 SOL = 10⁹ lamports
+			lamports	最小单位	不能再拆分
+		因此，如果你看到一笔交易消耗了 5000 lamports，这相当于：
+			5000 / 1_000_000_000 = 0.000005 SOL
+		✅ 二、lamports 常见用途
+			交易手续费（Transaction Fee）	每笔交易都会消耗少量 lamports，通常为 5000～10000 lamports（约 0.000005～0.00001 SOL）
+			租赁机制（Rent）	Solana 账户占用空间需要支付租金（除非存入足够 lamports 成为 “rent-exempt”）
+			创建账户	创建新账户时需预存一定 lamports 保证账户存在
+			程序部署	部署合约（Program）时也需支付 lamports 以存储代码
+	返回内容	txid 字符串	模拟结果结构体（日志、单元消耗等）
+	常见用途	发送真实转账、部署合约等	检查是否成功、调试合约
+*/
 func (c *svmClient) SimulateTransaction(ctx context.Context, signedTx string, config *SimulateRequest) (*SimulateResult, error) {
 	if signedTx == "" {
 		return nil, fmt.Errorf("invalid input: empty transaction")
 	}
 	if config == nil {
+		// Solana RPC 内部也倾向于使用 base64 作为默认交易模拟（simulate）返回的编码格式；
+		// 如你使用了 simulateTransaction 方法，返回的 data 默认格式就是 base64。
 		config = &SimulateRequest{
 			Commitment: string(Finalized),
 			Encoding:   "base64",
@@ -298,7 +353,8 @@ func (c *svmClient) SimulateTransaction(ctx context.Context, signedTx string, co
 	return &resp.Result, nil
 }
 
-// GetFeeForMessage TODO
+// GetFeeForMessage 估算一笔 已构造好但尚未签名的交易消息（Message） 的交易费用（Lamports），
+// 这是 Solana 中一种轻量级交易费估算方式，不需要实际签名或广播交易。
 func (c *svmClient) GetFeeForMessage(ctx context.Context, message string) (uint64, error) {
 	if message == "" {
 		return 0, fmt.Errorf("invalid input: empty message")
@@ -339,7 +395,14 @@ func (c *svmClient) GetFeeForMessage(ctx context.Context, message string) (uint6
 	return *resp.Result.Value, nil
 }
 
-// GetRecentPrioritizationFees TODO
+// GetRecentPrioritizationFees
+/*
+	该方法用于从 Solana 节点获取一批区块中不同交易优先级（priority level）对应的实际费用（fee），帮助钱包或交易平台动态评估：
+		当前链上拥堵程度
+		设置合适的优先级费用
+		估算加速交易的额外成本
+	可用于 交易费用推荐、交易调速策略、动态加速广播服务。
+*/
 func (c *svmClient) GetRecentPrioritizationFees(ctx context.Context) ([]*PrioritizationFee, error) {
 	requestBody := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -374,8 +437,18 @@ func (c *svmClient) GetRecentPrioritizationFees(ctx context.Context) ([]*Priorit
 	return resp.Result, nil
 }
 
+// GetSlot
+/*
+方法名： GetSlot
+目标： 获取 Solana 网络中，某一特定确认等级下的最新 Slot（即区块号）
+用途：
+	确定链的最新进展高度
+	结合 Slot 做区块/交易的时间戳估计
+	数据同步、分布式比对、容灾分析
+*/
 func (c *svmClient) GetSlot(ctx context.Context, commitment CommitmentType) (uint64, error) {
 	config := GetSlotRequest{
+		// 传不同的 commitment，节点可能返回不同的 slot
 		Commitment: commitment,
 	}
 
@@ -470,6 +543,11 @@ func (c *svmClient) GetBlocksWithLimit(ctx context.Context, startSlot uint64, li
 	return response.Result, nil
 }
 
+// GetBlockBySlot
+/*
+获取指定 slot 的区块信息，可选是否包含交易详情、区块奖励、编码格式、交易版本支持等。
+对应 Solana RPC 方法： getBlock
+*/
 func (c *svmClient) GetBlockBySlot(ctx context.Context, slot uint64, detailType TransactionDetailsType) (*BlockResult, error) {
 	config := GetBlockRequest{
 		Commitment:                     Finalized,
@@ -504,6 +582,9 @@ func (c *svmClient) GetBlockBySlot(ctx context.Context, slot uint64, detailType 
 	return &resp.Result, nil
 }
 
+// GetTransaction 这个方法用于调用 Solana RPC 接口 getTransaction，
+// 获取某笔交易的完整信息（包括原始交易内容、执行元信息、签名、时间戳等）。
+// signature：交易哈希（base58 编码）
 func (c *svmClient) GetTransaction(ctx context.Context, signature string) (*TransactionResult, error) {
 	signature = strings.TrimSpace(signature)
 	if signature == "" {
@@ -512,6 +593,11 @@ func (c *svmClient) GetTransaction(ctx context.Context, signature string) (*Tran
 	if len(signature) < 88 || len(signature) > 90 {
 		return nil, fmt.Errorf("invalid signature length: expected 88-90 chars, got %d", len(signature))
 	}
+	/*
+		encoding: "json"	string	返回结构为 JSON 格式（还有 base58、base64）
+		commitment: Finalized	string	表示查询已达成 Finalized 状态的交易（不可回滚）
+		maxSupportedTransactionVersion: 0	int	表示客户端最多只支持 Version 0 的交易（即不支持未来版本，legacy 视为 version "null"）
+	*/
 	config := map[string]interface{}{
 		"encoding":                       "json",
 		"commitment":                     Finalized,
@@ -560,6 +646,9 @@ func (c *svmClient) GetTransaction(ctx context.Context, signature string) (*Tran
 	}, nil
 }
 
+// GetTransactionRange 批量获取 Solana 交易详情 的函数，名称为 GetTransactionRange。
+// 它封装在一个 svmClient 客户端中， 调用前面定义好的单个 GetTransaction 方法，
+// 并支持高并发请求、限速、超时控制、错误重试等机制。
 func (c *svmClient) GetTransactionRange(ctx context.Context, inputSignatureList []string) ([]*TransactionResult, error) {
 	if len(inputSignatureList) == 0 {
 		return nil, fmt.Errorf("empty signatures")
@@ -672,7 +761,49 @@ func (c *svmClient) GetTransactionRange(ctx context.Context, inputSignatureList 
 	return validResults, nil
 }
 
-func (c *svmClient) GetTxForAddress(ctx context.Context, address string, commitment CommitmentType, limit uint64, beforeSignature string, untilSignature string) ([]*SignatureInfo, error) {
+// GetSignaturesForAddress
+/*
+	查询某个 Solana 地址的 交易签名记录列表。
+	返回的是交易摘要信息（不包含交易详情），可用于后续调用 getTransaction 获取完整交易。
+	对接 Solana 的 getSignaturesForAddress JSON-RPC 接口。
+
+参数名	说明
+	ctx	上下文，用于控制请求超时、取消
+	address	要查询的地址（Base58 编码的账户公钥）
+	commitment	区块确认级别，如 finalized, confirmed, processed
+	limit	限制返回最多多少条签名（最大 1000）
+	beforeSignature	向前分页：从这个签名之前开始查找（不包含该签名）
+	untilSignature	向后分页：查询到这个签名就停止（包含该签名）
+*/
+/*
+在 Solana 区块链中，交易签名（signature）就是该交易的唯一标识，也可视为该交易的 Hash。
+✅ Solana 中的交易签名（Signature）详解：
+	交易签名（signature）	是对交易数据进行 Ed25519 签名后的 Base58 编码字符串，长度通常为 88～90 字符。
+	作用	是交易的唯一标识，可以用来查交易详情、追踪状态、分页定位等
+	与 Ethereum 的 tx hash 类比	在作用上等同于以太坊的 transaction hash，但生成方式不同（Solana 是签名而不是哈希）
+	可用于 RPC 查询	例如 getTransaction, getConfirmedTransaction, getSignaturesForAddress 等接口都用它作为索引
+🧠 举例：
+	{
+	  "signature": "3htd98zMre...LZJyyud54WJTP",
+	  ...
+	}
+你可以拿这个 signature 去调用：
+	curl https://api.mainnet-beta.solana.com -X POST \
+	  -H "Content-Type: application/json" \
+	  -d '{
+		"jsonrpc":"2.0",
+		"id":1,
+		"method":"getTransaction",
+		"params":["3htd98zMre...LZJyyud54WJTP", {"encoding": "json"}]
+	  }'
+	即可获得该交易的详细信息。
+
+🧩 补充：为什么不叫 hash？
+	在以太坊，交易是用 keccak256(rlp(transaction)) 哈希生成的哈希值来唯一标识；
+	在 Solana，交易是通过 第一个签名者对交易数据签名（使用 Ed25519），并将该签名作为交易的标识；
+	所以它不是一个纯粹的哈希，而是签名后的结果（但同样是唯一且可验证的）。
+*/
+func (c *svmClient) GetSignaturesForAddress(ctx context.Context, address string, commitment CommitmentType, limit uint64, beforeSignature string, untilSignature string) ([]*SignatureInfo, error) {
 	config := &GetSignaturesRequest{
 		Commitment: string(commitment),
 		Limit:      limit,
