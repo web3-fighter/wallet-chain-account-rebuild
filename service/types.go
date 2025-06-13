@@ -12,6 +12,7 @@ type WalletAccountService interface {
 	GetBlockByNumber(ctx context.Context, param domain.BlockNumberParam) (domain.Block, error)
 	GetBlockByHash(ctx context.Context, param domain.BlockHashParam) (domain.Block, error)
 	GetBlockHeaderByHash(ctx context.Context, param domain.BlockHeaderHashParam) (domain.BlockHeader, error)
+	GetBlockHeaderByNumber(ctx context.Context, param domain.BlockHeaderNumberParam) (domain.BlockHeader, error)
 	ListBlockHeaderByRange(ctx context.Context, param domain.BlockHeaderByRangeParam) ([]domain.BlockHeader, error)
 	GetAccount(ctx context.Context, param domain.AccountParam) (domain.Account, error)
 	GetFee(ctx context.Context, param domain.FeeParam) (domain.Fee, error)

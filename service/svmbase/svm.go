@@ -24,6 +24,14 @@ type svmClient struct {
 	client *resty.Client
 }
 
+func (c *svmClient) GetBlockByHash(ctx context.Context, signature string) (*BlockResult, error) {
+	tx, err := c.GetTransaction(ctx, signature)
+	if err != nil {
+		return nil, err
+	}
+	return c.GetBlockBySlot(ctx, tx.Slot, Full)
+}
+
 func (c *svmClient) GetHealth(ctx context.Context) (string, error) {
 	requestBody := map[string]interface{}{
 		"jsonrpc": "2.0",

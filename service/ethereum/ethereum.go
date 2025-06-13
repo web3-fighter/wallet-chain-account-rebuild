@@ -41,6 +41,44 @@ type ETHNodeService struct {
 	donoting.DoNotingService
 }
 
+func (s *ETHNodeService) GetBlockHeaderByNumber(ctx context.Context, param domain.BlockHeaderNumberParam) (domain.BlockHeader, error) {
+	var blockNumber *big.Int
+	if param.Height == 0 {
+		blockNumber = nil // return latest block
+	} else {
+		blockNumber = big.NewInt(param.Height) // return special block by number
+	}
+	blockInfo, err := s.ethClient.BlockHeaderByNumber(ctx, blockNumber)
+	if err != nil {
+		log.Error("get latest block header fail", "err", err)
+		return domain.BlockHeader{}, err
+	}
+
+	blockHead := domain.BlockHeader{
+		Hash:             blockInfo.Hash().String(),
+		ParentHash:       blockInfo.ParentHash.String(),
+		UncleHash:        blockInfo.UncleHash.String(),
+		CoinBase:         blockInfo.Coinbase.String(),
+		Root:             blockInfo.Root.String(),
+		TxHash:           blockInfo.TxHash.String(),
+		ReceiptHash:      blockInfo.ReceiptHash.String(),
+		ParentBeaconRoot: common.Hash{}.String(),
+		Difficulty:       blockInfo.Difficulty.String(),
+		Number:           blockInfo.Number.String(),
+		GasLimit:         blockInfo.GasLimit,
+		GasUsed:          blockInfo.GasUsed,
+		Time:             blockInfo.Time,
+		Extra:            hex.EncodeToString(blockInfo.Extra),
+		MixDigest:        blockInfo.MixDigest.String(),
+		Nonce:            strconv.FormatUint(blockInfo.Nonce.Uint64(), 10),
+		BaseFee:          blockInfo.BaseFee.String(),
+		WithdrawalsHash:  common.Hash{}.String(),
+		BlobGasUsed:      *blockInfo.BlobGasUsed,
+		ExcessBlobGas:    *blockInfo.ExcessBlobGas,
+	}
+	return blockHead, nil
+}
+
 // ConvertAddress 将传入的十六进制字符串形式的 公钥 转换为 以太坊地址。
 func (s *ETHNodeService) ConvertAddress(_ context.Context, param domain.ConvertAddressParam) (string, error) {
 	// param.PublicKey：是未经压缩的公钥（通常是 130 个字符，0x04 开头）。

@@ -29,7 +29,7 @@ type SVMClient interface {
 	GetSlot(ctx context.Context, commitment CommitmentType) (uint64, error)
 	GetBlocksWithLimit(ctx context.Context, startSlot uint64, limit uint64) ([]uint64, error)
 	GetBlockBySlot(ctx context.Context, slot uint64, detailType TransactionDetailsType) (*BlockResult, error)
-
+	GetBlockByHash(ctx context.Context, signature string) (*BlockResult, error)
 	GetTransaction(ctx context.Context, signature string) (*TransactionResult, error)
 	GetTransactionRange(ctx context.Context, signatures []string) ([]*TransactionResult, error)
 	GetSignaturesForAddress(
