@@ -313,6 +313,17 @@ type TransactionMeta struct {
 	ComputeUnitsConsumed uint64      `json:"computeUnitsConsumed"` // 消耗的计算单元（类似 EVM 的 gas）
 }
 
+type TokenBalance struct {
+	AccountIndex  int    `json:"accountIndex"` // 对应账户索引
+	Mint          string `json:"mint"`         // Token mint 地址
+	Owner         string `json:"owner"`        // Token 拥有者
+	UITokenAmount struct {
+		Amount         string `json:"amount"`
+		Decimals       int    `json:"decimals"`
+		UIAmountString string `json:"uiAmountString"`
+	} `json:"uiTokenAmount"`
+}
+
 /*
 LoadedAddresses TODO
 
@@ -630,4 +641,24 @@ const (
 	defaultWithDebug        = false
 
 	blockLimit = 50_0000
+)
+
+type TransferType int32
+
+func (t TransferType) ToInt32() int32 {
+	return int32(t)
+}
+
+/*
+类型	判断依据
+SOL_TRANSFER	ProgramId == SystemProgram (111111...) 且指令是转账，通常指令 data 为空或 0x02（系统转账）
+SPL_TRANSFER	ProgramId == TokenProgram (Tokenkeg...) 且 data[0] == 3 且 decimals > 0
+SPL_NFT_TRANSFER	同 SPL_TRANSFER，但 mint 对应 metadata 存在，且 decimals == 0
+CONTRACT_CALL	除以上之外的程序调用，如 ProgramId != System/Token，尤其是 Metaplex、Bubblegum 等程序
+*/
+const (
+	TypeSolTransfer  TransferType = 1 // "SOL_TRANSFER"
+	TypeSplTransfer  TransferType = 2 // "SPL_TRANSFER"
+	TypeNftTransfer  TransferType = 3 // "SPL_NFT_TRANSFER"
+	TypeContractCall TransferType = 4 //"CONTRACT_CALL"
 )

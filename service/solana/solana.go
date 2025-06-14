@@ -202,7 +202,7 @@ func (s *SOLNodeService) GetBlockHeaderByHash(ctx context.Context, param domain.
 }
 
 func (s *SOLNodeService) ListBlockHeaderByRange(ctx context.Context, param domain.BlockHeaderByRangeParam) ([]domain.BlockHeader, error) {
-	if err := validateBlockRangeRequest(param); err != nil {
+	if err := validateBlockRangeParam(param); err != nil {
 		return nil, err
 	}
 	startSlot, _ := strconv.ParseUint(param.Start, 10, 64)
@@ -348,8 +348,21 @@ func (s *SOLNodeService) ListTxByAddress(ctx context.Context, param domain.TxAdd
 }
 
 func (s *SOLNodeService) GetTxByHash(ctx context.Context, param domain.GetTxByHashParam) (domain.TxMessage, error) {
-	//TODO implement me
-	panic("implement me")
+	if err := validateParam(param); err != nil {
+		return domain.TxMessage{}, err
+	}
+	txResult, err := s.svmClient.GetTransaction(ctx, param.Hash)
+	if err != nil {
+		log.Error("GetTransaction failed", "error", err)
+		return domain.TxMessage{}, err
+	}
+
+	txMessage, err := buildTxMessage(txResult)
+	if err != nil {
+		return txMessage, err
+	}
+
+	return txMessage, nil
 }
 
 func (s *SOLNodeService) CreateUnSignTransaction(ctx context.Context, param domain.UnSignTransactionParam) (string, error) {

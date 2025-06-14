@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/cosmos/btcutil/base58"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/gagliardetto/solana-go"
+	"github.com/web3-fighter/wallet-chain-account/domain"
 	"sort"
 	"strconv"
 )
@@ -19,6 +21,251 @@ const (
 	ProgramBubblegum     = "BGumetW1zi6dfL4nqJG1oD8T4PZ9FeZr4u8B7u4N1NYy"
 	ProgramSPLToken      = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 )
+
+// parseTokenTransferAmount 从 base64 data 中解析出 amount
+// SPL Token 金额获取方式对比如下：
+// 来源	适用场景	是否推荐	说明
+// PostTokenBalances - PreTokenBalances	通用方式，尤其适合主指令	✅ 推荐	可靠但不适用于 inner CPI 中没有列出的账户
+// 指令 data 解析（如上）	innerInstruction CPI 中的 transfer	✅ 推荐	必须解析 base64 data 字节，指令 ID = 3，amount 为 little-endian uint64
+func parseTokenTransferAmount(base64Data string) (uint64, error) {
+	dataBytes, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return 0, err
+	}
+	if len(dataBytes) < 9 {
+		return 0, fmt.Errorf("invalid SPL Token transfer data length: %d", len(dataBytes))
+	}
+
+	// 指令类型应该是 3
+	if dataBytes[0] != 3 {
+		return 0, fmt.Errorf("not a transfer instruction, id = %d", dataBytes[0])
+	}
+
+	// 剩余 8 字节是 little-endian 的 uint64
+	amount := binary.LittleEndian.Uint64(dataBytes[1:9])
+	return amount, nil
+}
+
+// 解析 InnerInstructions 中的 CPI（跨程序调用）
+/* CPI 是什么？
+	在 Solana 中，每个合约是一个「程序（Program）」。
+	当一个程序调用另一个程序，就形成了 CPI（跨程序调用），
+	这些调用不会出现在主 Instructions 列表中，而是记录在 Meta.InnerInstructions 中。
+举个例子：
+	比如你调用一个 SPL Token 合约转账，主指令可能是某个合约（如 Candy Machine）调用，
+	而转账的动作是由它内部调用 Token Program 触发的，那这个转账就会出现在 InnerInstructions 中。
+*/
+func processInnerInstructions(txResult *TransactionResult, tx *domain.TxMessage) {
+	tx.Type = TypeContractCall.ToInt32()
+	for _, item := range txResult.Meta.InnerInstructions {
+		entry, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		instructions, ok := entry["instructions"].([]interface{})
+		if !ok {
+			continue
+		}
+
+		for _, inst := range instructions {
+			innerInst, ok := inst.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			// programIdIndex → 找到 ProgramId
+			programIdIndex := int(innerInst["programIdIndex"].(float64))
+			if programIdIndex >= len(txResult.Transaction.Message.AccountKeys) {
+				continue
+			}
+			programId := txResult.Transaction.Message.AccountKeys[programIdIndex]
+			if programId != "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" {
+				continue
+			}
+
+			// 解析账户（from, to）
+			accounts := innerInst["accounts"].([]interface{})
+			if len(accounts) < 2 {
+				continue
+			}
+			toIndex := int(accounts[1].(float64))
+			if toIndex >= len(txResult.Transaction.Message.AccountKeys) {
+				continue
+			}
+			toAddr := txResult.Transaction.Message.AccountKeys[toIndex]
+
+			// 金额解析
+			dataStr, ok := innerInst["data"].(string)
+			if !ok {
+				continue
+			}
+			amount, err := parseTokenTransferAmount(dataStr)
+			if err != nil {
+				log.Error("failed to parse token transfer amount:", err)
+				continue
+			}
+
+			tx.Tos = append(tx.Tos, toAddr)
+			tx.Values = append(tx.Values, strconv.FormatUint(amount, 10))
+		}
+	}
+}
+
+// isLikelyMetaplexNF Metaplex NFT 地址识别
+func isLikelyMetaplexNFT(mint string) bool {
+	// 根据 Metaplex Metadata PDA 派生规则：
+	// PDA = ["metadata", METADATA_PROGRAM_ID, mint]
+	// 实际上我们可以通过程序 ID 是否存在 metadata program 来推断
+
+	// ✅ 可以改成调用链上合约/缓存元数据的方式
+	// 这里只是一个简单启发式：mint 地址为 32 长度 base58 的字符串
+	return len(mint) > 0 && len(mint) <= 44 // base58 字符串长度判断
+}
+
+// ProcessTokenTransfers 处理 SPL Token 转账（含 NFT）
+func ProcessTokenTransfers(txResult *TransactionResult, tx *domain.TxMessage) {
+	for _, post := range txResult.Meta.PostTokenBalances {
+		postToken, ok := post.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		accountIndex := int(postToken["accountIndex"].(float64))
+		if accountIndex >= len(txResult.Meta.PreTokenBalances) {
+			continue
+		}
+
+		preToken := txResult.Meta.PreTokenBalances[accountIndex].(map[string]interface{})
+
+		// amount difference
+		postAmount := postToken["uiTokenAmount"].(map[string]interface{})["amount"].(string)
+		preAmount := preToken["uiTokenAmount"].(map[string]interface{})["amount"].(string)
+
+		postAmt, _ := strconv.ParseUint(postAmount, 10, 64)
+		preAmt, _ := strconv.ParseUint(preAmount, 10, 64)
+
+		if postAmt > preAmt {
+			// 是接收方
+			owner := postToken["owner"].(string)
+			mint := postToken["mint"].(string)
+
+			// 识别 NFT（decimals == 0，amount == 1）
+			decimals := int(postToken["uiTokenAmount"].(map[string]interface{})["decimals"].(float64))
+			isNFT := decimals == 0 && postAmt-preAmt == 1
+			if isNFT {
+				tx.Tos = append(tx.Tos, owner)
+				tx.ContractAddress = mint
+				tx.Type = TypeNftTransfer.ToInt32()
+			} else {
+				tx.Tos = append(tx.Tos, owner)
+				tx.ContractAddress = mint
+				tx.Type = TypeSplTransfer.ToInt32()
+				tx.Values = append(tx.Values, strconv.FormatUint(postAmt-preAmt, 10))
+			}
+		}
+	}
+}
+
+// ProcessInstructions 遍历一笔 Solana 交易的所有指令（Instructions），
+// 从中识别系统原生转账指令（Program ID 为 "111111..."），
+// 提取接收方地址和转账金额，并保存到 tx 对象中。
+/*
+	func ProcessInstructions(txResult *TransactionResult, tx *domain.TxMessage) error {
+		// 原始 system transfer 解析
+		for i, inst := range txResult.Transaction.Message.Instructions {
+			if inst.ProgramIdIndex >= len(txResult.Transaction.Message.AccountKeys) {
+				log.Warn("Invalid program ID index", "instruction", i)
+				continue
+			}
+
+			programId := txResult.Transaction.Message.AccountKeys[inst.ProgramIdIndex]
+			switch programId {
+			case "11111111111111111111111111111111":
+				// 系统转账
+				if len(inst.Accounts) < 2 {
+					log.Warn("Invalid accounts length", "instruction", i)
+					continue
+				}
+				toIndex := inst.Accounts[1]
+				if toIndex >= len(txResult.Transaction.Message.AccountKeys) {
+					log.Warn("Invalid to account index", "instruction", i)
+					continue
+				}
+				toAddr := txResult.Transaction.Message.AccountKeys[toIndex]
+				tx.Tos = append(tx.Tos, toAddr)
+
+				if err := calculateAmount(txResult, toIndex, tx); err != nil {
+					log.Warn("Failed to calculate amount", "error", err)
+					continue
+				}
+			case "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA":
+				// SPL Token 处理（可扩展具体类型解析）
+				continue
+			}
+		}
+
+		// 扩展处理逻辑
+		processTokenTransfers(txResult, tx)
+		processInnerInstructions(txResult, tx)
+
+		return nil
+	}
+*/
+func ProcessInstructions(txResult *TransactionResult, tx *domain.TxMessage) error {
+	return processSOLTransfers(txResult, tx)
+}
+
+func processSOLTransfers(txResult *TransactionResult, tx *domain.TxMessage) error {
+	tx.Type = TypeSolTransfer.ToInt32()
+	for i, inst := range txResult.Transaction.Message.Instructions {
+		if inst.ProgramIdIndex >= len(txResult.Transaction.Message.AccountKeys) {
+			log.Warn("Invalid program ID index", "instruction", i)
+			continue
+		}
+
+		// 筛选系统转账指令（SystemProgram）
+		// 仅处理 ProgramID 为 1111... 的系统程序（System Program）指令，即 SOL 原生转账（不处理 SPL Token 或合约调用）。
+		if txResult.Transaction.Message.AccountKeys[inst.ProgramIdIndex] != "11111111111111111111111111111111" {
+			continue
+		}
+
+		// 检查参数是否合法（系统转账指令至少应包含 2 个账户地址，from 和 to）。
+		if len(inst.Accounts) < 2 {
+			log.Warn("Invalid accounts length", "instruction", i)
+			continue
+		}
+		toIndex := inst.Accounts[1]
+		if toIndex >= len(txResult.Transaction.Message.AccountKeys) {
+			log.Warn("Invalid to account index", "instruction", i)
+			continue
+		}
+		// 通过索引获取接收方地址。
+		// 将接收地址加入 tx.Tos 切片。
+		toAddr := txResult.Transaction.Message.AccountKeys[toIndex]
+		tx.Tos = append(tx.Tos, toAddr)
+
+		// 调用辅助函数计算转账金额
+		if err := calculateAmount(txResult, toIndex, tx); err != nil {
+			log.Warn("Failed to calculate amount", "error", err)
+			continue
+		}
+	}
+	return nil
+}
+
+// calculateAmount
+// 根据 preBalance 和 postBalance 差值，计算转账金额并写入 tx.Values。
+func calculateAmount(txResult *TransactionResult, toIndex int, tx *domain.TxMessage) error {
+	// 避免越界：校验该账户在 pre/post balance 中存在。
+	if toIndex >= len(txResult.Meta.PostBalances) || toIndex >= len(txResult.Meta.PreBalances) {
+		return fmt.Errorf("invalid balance index: %d", toIndex)
+	}
+
+	amount := txResult.Meta.PostBalances[toIndex] - txResult.Meta.PreBalances[toIndex]
+	tx.Values = append(tx.Values, strconv.FormatUint(amount, 10))
+
+	return nil
+}
 
 // GetSuggestedPriorityFee 从一组交易优先费 PrioritizationFee 中，
 // 计算出建议使用的优先费（SuggestedPriorityFee）值，

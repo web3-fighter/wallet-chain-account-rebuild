@@ -2,13 +2,64 @@ package solana
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/web3-fighter/wallet-chain-account/domain"
 	"github.com/web3-fighter/wallet-chain-account/service/svmbase"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
+
+func buildTxMessage(txResult *svmbase.TransactionResult) (domain.TxMessage, error) {
+	res := domain.TxMessage{}
+	if txResult == nil {
+		return res, errors.New("empty transaction result")
+	}
+
+	if len(txResult.Transaction.Signatures) == 0 {
+		return res, errors.New("invalid transaction: no signatures")
+	}
+	if len(txResult.Transaction.Message.AccountKeys) == 0 {
+		return res, errors.New("invalid transaction: no account keys")
+	}
+
+	res.Hash = txResult.Transaction.Signatures[0]
+	res.Height = strconv.FormatUint(txResult.Slot, 10)
+	res.Fee = strconv.FormatUint(txResult.Meta.Fee, 10)
+
+	if txResult.Meta.Err != nil {
+		res.Status = domain.TxStatus_Failed
+	} else {
+		res.Status = domain.TxStatus_Success
+	}
+
+	if txResult.BlockTime != nil {
+		res.Datetime = time.Unix(*txResult.BlockTime, 0).Format(time.RFC3339)
+	}
+
+	res.Froms = []string{txResult.Transaction.Message.AccountKeys[0]}
+
+	res.Tos = make([]string, 0)
+	res.Values = make([]string, 0)
+
+	if err := svmbase.ProcessInstructions(txResult, &res); err != nil {
+		return res, fmt.Errorf("failed to process instructions: %w", err)
+	}
+
+	return res, nil
+}
+
+func validateParam(param domain.GetTxByHashParam) error {
+	if param.Hash == "" {
+		return fmt.Errorf("invalid request: empty transaction hash")
+	}
+	if ok, msg := validateChainAndNetwork(param.Chain, param.Network); !ok {
+		return fmt.Errorf("invalid chain or network: %s", msg)
+	}
+	return nil
+}
 
 func organizeTransactionsByBlock(txResults []*svmbase.TransactionResult) ([]domain.BlockHeader, error) {
 	if len(txResults) == 0 {
@@ -74,7 +125,7 @@ func organizeTransactionsByBlock(txResults []*svmbase.TransactionResult) ([]doma
 	return blocks, nil
 }
 
-func validateBlockRangeRequest(param domain.BlockHeaderByRangeParam) error {
+func validateBlockRangeParam(param domain.BlockHeaderByRangeParam) error {
 	startSlot, err := strconv.ParseUint(param.Start, 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid start height format: %s", err)
