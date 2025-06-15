@@ -3,16 +3,8 @@ package svmbase
 import (
 	"context"
 	"github.com/gagliardetto/solana-go"
-	"github.com/gagliardetto/solana-go/rpc/jsonrpc"
-	"net/http"
 	"time"
 )
-
-type JSONRpc interface {
-	CallForInto(ctx context.Context, out interface{}, method string, params []interface{}) error
-	CallWithCallback(ctx context.Context, method string, params []interface{}, callback func(*http.Request, *http.Response) error) error
-	CallBatch(ctx context.Context, requests jsonrpc.RPCRequests) (jsonrpc.RPCResponses, error)
-}
 
 type SVMClient interface {
 	GetHealth(ctx context.Context) (string, error)

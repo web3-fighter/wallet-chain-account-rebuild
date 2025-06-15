@@ -372,6 +372,28 @@ func (s *ETHNodeService) GetTxByHash(ctx context.Context, param domain.GetTxByHa
 		log.Info("Get account code fail", "err", err)
 		return domain.TxMessage{}, fmt.Errorf("get account code fail: %w", err)
 	}
+
+	/*
+		TODO
+			 为什么你需要处理多个 transfer？
+			 	场景	示例	你当前代码是否能识别？
+				1. 合约内部多次调用 transfer（ERC20、721、1155）	比如 staking 奖励 + 转账 + burn	❌ 无法识别
+				2. multicall 合约或批量转账函数	多个 token 转账聚合执行	❌ 无法识别
+				3. ETH 内部转账（合约中 send/transfer）	通过 call 方式将 ETH 发到多个地址	❌ 无法识别
+				4. ERC721/ERC1155 NFT 批量转移	如 OpenSea 交易	❌ 无法识别
+				5. 内部调用（internal transaction）	借贷、DEX 交易、多跳交易	❌ 无法识别
+
+			✅ 正确处理方式：解析交易事件 Logs
+				Ethereum 的 Transfer 实际会体现在 Receipt 的 Logs 中，
+				只要是符合标准的合约，都会触发对应的事件。
+
+			你可以在 receipt.Logs 中查找这些事件：
+				示例：ERC20 Transfer 事件的 Signature
+					event Transfer(address indexed from, address indexed to, uint256 value)
+				其对应的 topic0：
+					erc20TransferSig := crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
+
+	*/
 	// 判断是否是代币转账
 	/*
 		第一步 判断目标地址是否是合约
