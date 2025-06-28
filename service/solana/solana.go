@@ -3,12 +3,14 @@ package solana
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/log"
+	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	associatedtokenaccount "github.com/gagliardetto/solana-go/programs/associated-token-account"
 	"github.com/gagliardetto/solana-go/programs/system"
@@ -18,8 +20,8 @@ import (
 	"github.com/web3-fighter/chain-explorer-api/types"
 	"github.com/web3-fighter/wallet-chain-account/domain"
 	"github.com/web3-fighter/wallet-chain-account/service"
-	"github.com/web3-fighter/wallet-chain-account/service/donoting"
 	"github.com/web3-fighter/wallet-chain-account/service/svmbase"
+	"github.com/web3-fighter/wallet-chain-account/service/unimplemente"
 	"math"
 	"strconv"
 )
@@ -36,7 +38,7 @@ type SOLNodeService struct {
 	svmClient svmbase.SVMClient
 	sdkClient *rpc.Client
 	solData   *svmbase.SolData
-	donoting.DoNotingService
+	unimplemente.UnimplementedService
 }
 
 //func (s *SOLNodeService) GetSupportChains(ctx context.Context, param domain.SupportChainsParam) (bool, error) {
@@ -776,8 +778,88 @@ func (s *SOLNodeService) BuildSignedTransaction(ctx context.Context, param domai
 }
 
 func (s *SOLNodeService) DecodeTransaction(ctx context.Context, param domain.DecodeTransactionParam) (string, error) {
-	//TODO implement me
-	panic("implement me")
+	// Decode base58 encoded transaction
+	rawTx, err := base58.Decode(param.RawTx)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode base58 transaction: %w", err)
+	}
+
+	// Unmarshal binary transaction
+	tx := &solana.Transaction{}
+	dec := bin.NewBinDecoder(rawTx)
+	err = tx.UnmarshalWithDecoder(dec)
+	if err != nil {
+		return "", fmt.Errorf("failed to unmarshal transaction: %w", err)
+	}
+	message := tx.Message
+
+	// Prepare result struct
+	var result TxStructure
+	result.Nonce = message.RecentBlockhash.String()
+	result.GasPrice = "0"  // Solana不使用
+	result.GasTipCap = "0" // Solana不使用
+	result.GasFeeCap = "0" // Solana不使用
+	result.Gas = 0         // Solana没有 gas
+
+	if len(message.AccountKeys) > 0 {
+		result.FromAddress = message.AccountKeys[0].String()
+	}
+
+	// 查找签名（只取第一个）
+	if len(tx.Signatures) > 0 {
+		result.Signature = hex.EncodeToString(tx.Signatures[0][:])
+	}
+
+	// 遍历指令分析交易类型
+	for _, instr := range message.Instructions {
+		program := message.AccountKeys[instr.ProgramIDIndex]
+		switch program.String() {
+		case solana.SystemProgramID.String():
+			// 系统转账 (SOL transfer)
+			result.ContractAddress = "" // native token 没有合约地址
+			result.TokenId = ""         // 非 NFT
+			result.Value = fmt.Sprintf("%.9f", float64(binary.LittleEndian.Uint64(instr.Data))/1e9)
+			if len(instr.Accounts) >= 2 {
+				toIdx := instr.Accounts[1]
+				result.ToAddress = message.AccountKeys[toIdx].String()
+			}
+		case solana.TokenProgramID.String():
+			// TODO 为解析合约地址 和 token id
+			// SPL 转账或 NFT 转移
+			if len(instr.Data) > 0 && instr.Data[0] == 3 {
+				// SPL Transfer
+				result.Value = fmt.Sprintf("%.0f", float64(binary.LittleEndian.Uint64(instr.Data[1:])))
+				result.ContractAddress = program.String() // token 合约地址应另行补充（见下方建议）
+				if len(instr.Accounts) >= 2 {
+					toIdx := instr.Accounts[1]
+					result.ToAddress = message.AccountKeys[toIdx].String()
+				}
+				result.TokenId = "" // 不是 NFT
+			} else if len(instr.Data) > 0 && instr.Data[0] == 12 {
+				// TransferChecked，可能是 NFT
+				if len(instr.Accounts) >= 2 {
+					toIdx := instr.Accounts[1]
+					result.ToAddress = message.AccountKeys[toIdx].String()
+				}
+				result.Value = "1"
+				result.TokenId = "?" // NFT 的 ID 一般需要额外解析 metadata account
+			}
+		case solana.SPLAssociatedTokenAccountProgramID.String():
+			// 创建 ATA，无需设置 Value
+			// 通常前一个 Transfer 指令已处理
+			continue
+		default:
+			// 其他合约调用，可忽略或记录日志
+		}
+	}
+
+	// JSON 编码返回
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal TxStructure: %w", err)
+	}
+
+	return string(jsonBytes), nil
 }
 
 func (s *SOLNodeService) VerifySignedTransaction(ctx context.Context, param domain.VerifyTransactionParam) (bool, error) {

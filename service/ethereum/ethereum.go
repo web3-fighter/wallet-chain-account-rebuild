@@ -20,8 +20,8 @@ import (
 	"github.com/web3-fighter/wallet-chain-account/domain"
 	"github.com/web3-fighter/wallet-chain-account/pkg/util"
 	"github.com/web3-fighter/wallet-chain-account/service"
-	"github.com/web3-fighter/wallet-chain-account/service/donoting"
 	"github.com/web3-fighter/wallet-chain-account/service/evmbase"
+	"github.com/web3-fighter/wallet-chain-account/service/unimplemente"
 	"math/big"
 	"regexp"
 	"strconv"
@@ -38,7 +38,7 @@ var _ service.WalletAccountService = (*ETHNodeService)(nil)
 type ETHNodeService struct {
 	ethClient     evmbase.EVMClient
 	ethDataClient *evmbase.EthScan
-	donoting.DoNotingService
+	unimplemente.UnimplementedService
 }
 
 func (s *ETHNodeService) GetBlockHeaderByNumber(ctx context.Context, param domain.BlockHeaderNumberParam) (domain.BlockHeader, error) {
